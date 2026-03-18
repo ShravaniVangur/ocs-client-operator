@@ -27,6 +27,7 @@ import (
 
 	apiv1alpha1 "github.com/red-hat-storage/ocs-client-operator/api/v1alpha1"
 	"github.com/red-hat-storage/ocs-client-operator/internal/controller"
+	"github.com/red-hat-storage/ocs-client-operator/pkg/alert"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/templates"
 	"github.com/red-hat-storage/ocs-client-operator/pkg/utils"
 	admwebhook "github.com/red-hat-storage/ocs-client-operator/pkg/webhook"
@@ -337,6 +338,16 @@ func main() {
 			setupLog.Error(err, "unable to create controller", "controller", "ObjectBucketClaim")
 			os.Exit(1)
 		}
+	}
+
+	alertRunnable := alert.NewRunnable(
+		mgr.GetClient(),
+		utils.GetOperatorNamespace(),
+		ctrl.Log.WithName("alert"),
+	)
+	if err := mgr.Add(alertRunnable); err != nil {
+		setupLog.Error(err, "unable to add alert runnable to manager")
+		os.Exit(1)
 	}
 
 	setupLog.Info("starting manager")
