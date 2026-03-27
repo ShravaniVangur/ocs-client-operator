@@ -66,6 +66,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -118,15 +119,16 @@ func main() {
 	var probeAddr string
 	var secureMetrics bool
 	var consolePort int
+	var metricsPort int
 	var webhookPort int
 	var tlsOpts []func(*tls.Config)
-	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
+	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
-	flag.BoolVar(&secureMetrics, "metrics-secure", true,
+	flag.BoolVar(&secureMetrics, "metrics-secure", false,
 		"If set, the metrics endpoint is served securely via HTTPS. Use --metrics-secure=false to use HTTP instead.")
 	flag.StringVar(&metricsCertPath, "metrics-cert-path", "",
 		"The directory that contains the metrics server certificate.")
@@ -135,6 +137,7 @@ func main() {
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics")
 	flag.IntVar(&webhookPort, "webhook-port", 7443, "The port the webhook sever binds to.")
+	flag.IntVar(&metricsPort, "metrics-port", 8080, "The port where the metrics endpoint is exposed.")
 	flag.IntVar(&consolePort, "console-port", 9001, "The port where the console server will be serving it's payload")
 	opts := zap.Options{
 		Development: true,
@@ -314,6 +317,7 @@ func main() {
 		Scheme:            mgr.GetScheme(),
 		OperatorNamespace: utils.GetOperatorNamespace(),
 		ConsolePort:       int32(consolePort),
+		MetricsPort:       int32(metricsPort),
 		AvailableCrds:     availCrds,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "OperatorConfigMapReconciler")
@@ -349,6 +353,10 @@ func main() {
 		setupLog.Error(err, "unable to add alert runnable to manager")
 		os.Exit(1)
 	}
+
+	alertCollector := alert.NewCollector(alertRunnable)
+	resourceCollector := alert.NewResourceCollector(mgr.GetClient())
+	metrics.Registry.MustRegister(alertCollector, resourceCollector)
 
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
